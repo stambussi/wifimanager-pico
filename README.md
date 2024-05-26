@@ -37,7 +37,7 @@ where `main_img` is a char* to a base64 encoded image in this case.
 
 ## Captive Portal
 
-Following a similar approach to the ESP WiFiManager, if no WiFi credentials are found within EEPROM, the PicoW creates an access point with an SSID of and password of chosing. Once connected a captive portal is presented enabling selection of found WiFi networks and password to be entered. Once validated, these credentials are saved in EEPROM and used to connect on next restart.
+Following a similar approach to the ESP WiFiManager, if no WiFi credentials are found within EEPROM, the PicoW creates an access point with an SSID and password of chosing. Once connected, a captive portal is presented enabling selection of found WiFi networks and a password to be entered. Once validated, these credentials are saved in EEPROM and used to connect on next restart.
 
 The portal home page confirms the device attributes including name, maker and firmware version.
 
@@ -71,7 +71,7 @@ board_build.filesystem_size = 0.5m
 monitor_filters = time
 monitor_speed = 115200
 lib_deps = 
-	https://github.com/mthorley/wifimanager-pico.git
+    https://github.com/mthorley/wifimanager-pico.git
     CRC@^1.0.1
 ```
 
@@ -82,6 +82,15 @@ The library will output logs to Serial, if debug is enabled in the constructor:
 ```
 bool debug = true;
 WiFiManager wm("ap_SSID", "ap_password", debug);   // Access point 
+```
+
+## Reset WiFi Credentials
+
+Any WiFi credentials can be reset thereby clearing any credentials in EEPROM and restart the portal capture process.
+
+```
+bool reset = true;
+bool success = wm.autoConnect(reset);
 ```
 
 ## Attribution

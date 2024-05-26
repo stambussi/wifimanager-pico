@@ -17,6 +17,7 @@
  */
 
 #define SSID_OR_PWD_MAXLEN   32
+#define EEPROM_LEN           512
 
 class WiFiManager
 {
@@ -24,7 +25,7 @@ public:
     WiFiManager(char const *apName, char const *apPassword, bool serialLog = false);
     ~WiFiManager();
 
-    bool autoConnect();
+    bool autoConnect(bool reset=false);
     void setContentText(String& title, String& name, String& shortname, String& maker, String& version);
     void setContentMainImage(const char* img);
 
@@ -46,7 +47,8 @@ private:
         RETRY_CONNECTION,   // -> (num connection attempts > 3) ? SHOW_PORTAL : CONNECT_TO_WLAN             // _connectionAttempts++
         SHOW_PORTAL,        // -> (WLAN configured) ? SAVE_CREDS : SHOW_PORTAL
         SAVE_CREDENTIALS,   // -> (save credentials) then CONNECT_TO_WLAN                                   // _connectionAttempts reset
-        STOP
+        RESET,              // -> (clear credentials) then (RE)START
+        STOP,
     } State_t;
 
     // heart of the machine
@@ -64,6 +66,7 @@ private:
     // credential EEPROM storage
     bool loadCredentials();
     void saveCredentials();
+    void clearCredentials() const;
 
     // webserver handler callbacks
     void handleRoot() const;

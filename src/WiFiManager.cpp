@@ -41,7 +41,7 @@ WiFiManager::WiFiManager(const char *apName, const char *apPassword, bool serial
     _title = "PicoW";
 
 // FIXME: Is this in the correct location...
-    EEPROM.begin(512);
+    EEPROM.begin(EEPROM_LEN);
 }
 
 WiFiManager::~WiFiManager()
@@ -51,8 +51,11 @@ WiFiManager::~WiFiManager()
     server.stop();
 }
 
-bool WiFiManager::autoConnect()
+bool WiFiManager::autoConnect(bool reset)
 {
+    if (reset)
+        _currentState = State_t::RESET;
+
     // iterate through state machine until we have configured WiFi
     while (_currentState != State_t::STOP)
         cycleStateMachine();
@@ -84,7 +87,6 @@ void WiFiManager::cycleStateMachine()
         case START:
             _currentState = LOAD_CREDENTIALS;               // move to LOAD_CREDENTIALS, initialise state variables
             _accessPointRunning = false;
-            _setupConfigPortal = false;
             _connectionAttempts = 0;
             break;
 
@@ -122,6 +124,11 @@ void WiFiManager::cycleStateMachine()
                 _accessPointRunning = false;                // reinitialise AP
                 _currentState = SHOW_PORTAL;
             }
+            break;
+
+        case RESET:                                         // clear credentials and force restart
+            clearCredentials();
+            _currentState = START;
             break;
 
         case STOP:                                          // done: WiFi creds configured and connected to
@@ -438,4 +445,14 @@ void WiFiManager::saveCredentials()
     EEPROM.commit();
 
     LOGF_DEBUG("Stored credentials for SSID: %s and CRC: %d", temp._ssid, temp._crc);
+}
+
+// clear EEPROM
+void WiFiManager::clearCredentials() const
+{
+    for (int i = 0; i < EEPROM_LEN; i++) {
+        EEPROM.write(i, 0);
+    }
+    EEPROM.commit();
+    LOG_DEBUG(F("Credentials cleared"));
 }
