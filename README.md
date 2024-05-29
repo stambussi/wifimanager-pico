@@ -86,10 +86,11 @@ WiFiManager wm("ap_SSID", "ap_password", debug);   // Access point
 
 ## Reset WiFi Credentials
 
-Any WiFi credentials can be reset thereby clearing any credentials in EEPROM and restart the portal capture process.
-
+WiFi credentials can be reset using `clearCredentials()` which clears any stored credentials in EEPROM and forces the captive portal during `autoConnect()`:
 ```
 WiFiManager::clearCredentials();               // clear save WiFi creds
+WiFiManager wm("ap_SSID", "ap_password");      // Access point credentials for portal
+bool success = wm.autoConnect();
 ```
 
 ## Attribution
