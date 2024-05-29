@@ -17,7 +17,6 @@
  */
 
 #define SSID_OR_PWD_MAXLEN   32
-#define EEPROM_LEN           512
 
 class WiFiManager
 {
@@ -28,10 +27,18 @@ public:
     bool autoConnect(bool reset=false);
     void setContentText(String& title, String& name, String& shortname, String& maker, String& version);
     void setContentMainImage(const char* img);
+    static void clearCredentials();
 
     inline static const char *HOSTNAME = "picow";    // hostname for mDNS to enable http://picow.local
+    inline static const int EEPROM_SIZE = 512;
 
 private:
+    // DNS server
+    DNSServer _dnsServer;
+
+    // Web server
+    WebServer _webServer;
+
     // Used to load/save credentials and CRC32 as struct in EEPROM.
     typedef struct wifi_credentials_t {
         char      _ssid[SSID_OR_PWD_MAXLEN + 1];
@@ -60,22 +67,21 @@ private:
 
     // captive portal methods
     bool startConfigPortal();
-    bool redirectToPortal() const;
+    bool redirectToPortal();
     boolean isIp(const String& str) const;
 
     // credential EEPROM storage
     bool loadCredentials();
     void saveCredentials();
-    void clearCredentials() const;
 
     // webserver handler callbacks
-    void handleRoot() const;
-    void handleWifi() const;
+    void handleRoot();
+    void handleWifi();
     void handleWifiSave();
-    void handleNotFound() const;
+    void handleNotFound();
 
     // html helpers
-    void sendStandardHeaders() const;
+    void sendStandardHeaders();
     void getSignalStrength(String& cssStyle, const int32_t rssi) const;
 
 // members
