@@ -24,13 +24,21 @@ public:
     WiFiManager(char const *apName, char const *apPassword, bool serialLog = false);
     ~WiFiManager();
 
-    bool autoConnect();
+    bool autoConnect(bool reset=false);
     void setContentText(String& title, String& name, String& shortname, String& maker, String& version);
     void setContentMainImage(const char* img);
+    static void clearCredentials();
 
     inline static const char *HOSTNAME = "picow";    // hostname for mDNS to enable http://picow.local
+    inline static const int EEPROM_SIZE = 512;
 
 private:
+    // DNS server
+    DNSServer _dnsServer;
+
+    // Web server
+    WebServer _webServer;
+
     // Used to load/save credentials and CRC32 as struct in EEPROM.
     typedef struct wifi_credentials_t {
         char      _ssid[SSID_OR_PWD_MAXLEN + 1];
@@ -46,7 +54,8 @@ private:
         RETRY_CONNECTION,   // -> (num connection attempts > 3) ? SHOW_PORTAL : CONNECT_TO_WLAN             // _connectionAttempts++
         SHOW_PORTAL,        // -> (WLAN configured) ? SAVE_CREDS : SHOW_PORTAL
         SAVE_CREDENTIALS,   // -> (save credentials) then CONNECT_TO_WLAN                                   // _connectionAttempts reset
-        STOP
+        RESET,              // -> (clear credentials) then (RE)START
+        STOP,
     } State_t;
 
     // heart of the machine
@@ -58,7 +67,7 @@ private:
 
     // captive portal methods
     bool startConfigPortal();
-    bool redirectToPortal() const;
+    bool redirectToPortal();
     boolean isIp(const String& str) const;
 
     // credential EEPROM storage
@@ -66,13 +75,13 @@ private:
     void saveCredentials();
 
     // webserver handler callbacks
-    void handleRoot() const;
-    void handleWifi() const;
+    void handleRoot();
+    void handleWifi();
     void handleWifiSave();
-    void handleNotFound() const;
+    void handleNotFound();
 
     // html helpers
-    void sendStandardHeaders() const;
+    void sendStandardHeaders();
     void getSignalStrength(String& cssStyle, const int32_t rssi) const;
 
 // members

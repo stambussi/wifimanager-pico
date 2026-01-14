@@ -13,12 +13,6 @@ Tasks
 #define LOGF_DEBUG(fmt, ...)    if (_serialLog) { Serial.print("[D] "); Serial.printf(fmt, __VA_ARGS__); Serial.println(); }
 #define LOG_DEBUG(s)            if (_serialLog) { Serial.print("[D] "); Serial.println(s); }
 
-// DNS server
-DNSServer dnsServer;
-
-// Web server
-WebServer server(80);
-
 static const char *_LOG_PREFIX = "[WiFiManager] ";
 
 // AccessPoint network config
@@ -32,7 +26,8 @@ WiFiManager::WiFiManager(const char *apName, const char *apPassword, bool serial
     _accessPointRunning(false),
     _connectionAttempts(0),
     _currentState(State_t::START),
-    _previousState(State_t::STOP)
+    _previousState(State_t::STOP),
+    _webServer(80)
 {
     strncpy(_apSSID, apName, 32);
     strncpy(_apPassword, apPassword, 32);
@@ -41,18 +36,21 @@ WiFiManager::WiFiManager(const char *apName, const char *apPassword, bool serial
     _title = "PicoW";
 
 // FIXME: Is this in the correct location...
-    EEPROM.begin(512);
+    EEPROM.begin(EEPROM_SIZE);
 }
 
 WiFiManager::~WiFiManager()
 {
     // stop WiFiManager servers so other servers downstream (e.g. aWOT) can use the same ports
-    dnsServer.stop();
-    server.stop();
+    _dnsServer.stop();
+    _webServer.stop();
 }
 
-bool WiFiManager::autoConnect()
+bool WiFiManager::autoConnect(bool reset)
 {
+    if (reset)
+        _currentState = State_t::RESET;
+
     // iterate through state machine until we have configured WiFi
     while (_currentState != State_t::STOP)
         cycleStateMachine();
@@ -84,7 +82,6 @@ void WiFiManager::cycleStateMachine()
         case START:
             _currentState = LOAD_CREDENTIALS;               // move to LOAD_CREDENTIALS, initialise state variables
             _accessPointRunning = false;
-            _setupConfigPortal = false;
             _connectionAttempts = 0;
             break;
 
@@ -124,6 +121,11 @@ void WiFiManager::cycleStateMachine()
             }
             break;
 
+        case RESET:                                         // clear credentials and force restart
+            clearCredentials();
+            _currentState = START;
+            break;
+
         case STOP:                                          // done: WiFi creds configured and connected to
             break;
 
@@ -134,8 +136,8 @@ void WiFiManager::cycleStateMachine()
 
     // if the config portal has been setup, handle dns and web requests
     if (_setupConfigPortal) {
-        dnsServer.processNextRequest();
-        server.handleClient();
+        _dnsServer.processNextRequest();
+        _webServer.handleClient();
     }
 
     if (_previousState != _currentState)
@@ -230,15 +232,15 @@ bool WiFiManager::startConfigPortal()
         LOG_DEBUG(F("Starting config portal"));
 
         // Setup the DNS server redirecting all domains to the AP_IP
-        dnsServer.setErrorReplyCode(DNSReplyCode::NoError);
-        dnsServer.start(DNS_PORT, "*", AP_IP);
+        _dnsServer.setErrorReplyCode(DNSReplyCode::NoError);
+        _dnsServer.start(DNS_PORT, "*", AP_IP);
 
         // Setup web pages: root, wifi config and not found
-        server.on("/", std::bind(&WiFiManager::handleRoot, this));
-        server.on("/wifi", std::bind(&WiFiManager::handleWifi, this));
-        server.on("/wifisave", std::bind(&WiFiManager::handleWifiSave, this));
-        server.onNotFound(std::bind(&WiFiManager::handleNotFound, this));
-        server.begin();             // Web server start
+        _webServer.on("/", std::bind(&WiFiManager::handleRoot, this));
+        _webServer.on("/wifi", std::bind(&WiFiManager::handleWifi, this));
+        _webServer.on("/wifisave", std::bind(&WiFiManager::handleWifiSave, this));
+        _webServer.onNotFound(std::bind(&WiFiManager::handleNotFound, this));
+        _webServer.begin();             // Web server start
 
         LOG_DEBUG(F("HTTP server started"));
         _setupConfigPortal = true;
@@ -251,16 +253,16 @@ bool WiFiManager::startConfigPortal()
  * Redirect to captive portal if we got a request for another domain. 
  * Return true in that case so the page handler does not try to handle the request again.
  */
-bool WiFiManager::redirectToPortal() const
+bool WiFiManager::redirectToPortal()
 {
-    if (!isIp(server.hostHeader()) && server.hostHeader() != (String(HOSTNAME) + ".local"))
+    if (!isIp(_webServer.hostHeader()) && _webServer.hostHeader() != (String(HOSTNAME) + ".local"))
     {
         LOG_DEBUG(F("Request redirected to captive portal"));
 
-        IPAddress ip = server.client().localIP();
-        server.sendHeader("Location", String("http://") + ip.toString(), true);
-        server.send(302, "text/plain", "");     // Empty content inhibits Content-length header so we have to close the socket ourselves.
-        server.client().stop();                 // Stop is needed because we sent no content length
+        IPAddress ip = _webServer.client().localIP();
+        _webServer.sendHeader("Location", String("http://") + ip.toString(), true);
+        _webServer.send(302, "text/plain", "");     // Empty content inhibits Content-length header so we have to close the socket ourselves.
+        _webServer.client().stop();                 // Stop is needed because we sent no content length
 
         return true;
     }
@@ -270,17 +272,17 @@ bool WiFiManager::redirectToPortal() const
 /**
  * Send standard HTTP headers
  */
-void WiFiManager::sendStandardHeaders() const
+void WiFiManager::sendStandardHeaders()
 {
-    server.sendHeader("Cache-Control", "no-cache, no-store, must-revalidate");
-    server.sendHeader("Pragma", "no-cache");
-    server.sendHeader("Expires", "-1");
+    _webServer.sendHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+    _webServer.sendHeader("Pragma", "no-cache");
+    _webServer.sendHeader("Expires", "-1");
 }
 
 /** 
  * Handle root or redirect to captive portal
  */
-void WiFiManager::handleRoot() const
+void WiFiManager::handleRoot()
 {
     // If captive portal then redirect instead of displaying the page
     if (redirectToPortal()) { 
@@ -294,7 +296,7 @@ void WiFiManager::handleRoot() const
     html.replace("${firmware.shortname}", _shortname);
     html.replace("${firmware.maker}",     _maker);
     html.replace("${firmware.version}",   _version);
-    server.send(200, "text/html", html);
+    _webServer.send(200, "text/html", html);
 }
 
 /**
@@ -313,7 +315,7 @@ void WiFiManager::getSignalStrength(String& cssStyle, const int32_t rssi) const
 /**
  * Show available wifi networks.
  */
-void WiFiManager::handleWifi() const
+void WiFiManager::handleWifi()
 {
     sendStandardHeaders();
     String html(wifi_template);
@@ -348,8 +350,8 @@ void WiFiManager::handleWifi() const
     WiFi.scanDelete();                      // clean-up
 
     html.replace("${networks}", htmlNetworks);
-    server.send(200, "text/html", html);
-    server.client().stop();                 // Stop is needed because we sent no content length
+    _webServer.send(200, "text/html", html);
+    _webServer.client().stop();                 // Stop is needed because we sent no content length
 }
 
 /**
@@ -359,17 +361,17 @@ void WiFiManager::handleWifiSave()
 {
     LOG_DEBUG(F("Handle WiFi save"));
 
-    server.arg("n").toCharArray(_wlanSSID, SSID_OR_PWD_MAXLEN);
-    server.arg("p").toCharArray(_wlanPassword, SSID_OR_PWD_MAXLEN);
-    server.sendHeader("Location", "wifi", true);
+    _webServer.arg("n").toCharArray(_wlanSSID, SSID_OR_PWD_MAXLEN);
+    _webServer.arg("p").toCharArray(_wlanPassword, SSID_OR_PWD_MAXLEN);
+    _webServer.sendHeader("Location", "wifi", true);
     sendStandardHeaders();
-    server.send(302, "text/plain", "");     // Empty content inhibits Content-length header so we have to close the socket ourselves.
-    server.client().stop();                 // Stop is needed because we sent no content length
+    _webServer.send(302, "text/plain", "");     // Empty content inhibits Content-length header so we have to close the socket ourselves.
+    _webServer.client().stop();                 // Stop is needed because we sent no content length
     
     _currentState = State_t::SAVE_CREDENTIALS;      // force next step in state machine
 }
 
-void WiFiManager::handleNotFound() const
+void WiFiManager::handleNotFound()
 {
     // If captive portal then redirect instead of displaying the error page
     if (redirectToPortal())
@@ -379,19 +381,19 @@ void WiFiManager::handleNotFound() const
 
     String message = F("File Not Found\n\n");
     message += F("URI: ");
-    message += server.uri();
+    message += _webServer.uri();
     message += F("\nMethod: ");
-    message += (server.method() == HTTP_GET) ? "GET" : "POST";
+    message += (_webServer.method() == HTTP_GET) ? "GET" : "POST";
     message += F("\nArguments: ");
-    message += server.args();
+    message += _webServer.args();
     message += F("\n");
 
-    for (uint8_t i = 0; i < server.args(); i++)
+    for (uint8_t i = 0; i < _webServer.args(); i++)
     {
-        message += String(F(" ")) + server.argName(i) + F(": ") + server.arg(i) + F("\n");
+        message += String(F(" ")) + _webServer.argName(i) + F(": ") + _webServer.arg(i) + F("\n");
     }
     sendStandardHeaders();
-    server.send(404, "text/plain", message);
+    _webServer.send(404, "text/plain", message);
 //FIXME: button to get back home?
 }
 
@@ -438,4 +440,14 @@ void WiFiManager::saveCredentials()
     EEPROM.commit();
 
     LOGF_DEBUG("Stored credentials for SSID: %s and CRC: %d", temp._ssid, temp._crc);
+}
+
+// overwrite EEPROM with 1's to force CRC failure on credential check
+// which will trigger captive portal on autoConnect().
+void WiFiManager::clearCredentials()
+{
+    for (int i=0;i<EEPROM_SIZE;i++) {
+        EEPROM.put(i, 1);
+    }
+    EEPROM.commit();
 }
