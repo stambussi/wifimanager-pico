@@ -195,7 +195,9 @@ int8_t WiFiManager::connectWifi() const
 {
     LOGF_DEBUG("Connecting as wifi client to SSID %s", _wlanSSID);
 
-    WiFi.disconnect();
+    WiFi.disconnect(true);
+    delay(500);
+    WiFi.config(INADDR_NONE);
     WiFi.begin(_wlanSSID, _wlanPassword);
     int8_t res = WiFi.waitForConnectResult(MAX_CONNECTION_TIMEOUT_MS);
 
