@@ -46,10 +46,15 @@ WiFiManager::~WiFiManager()
     _webServer.stop();
 }
 
-bool WiFiManager::autoConnect(bool reset)
+bool WiFiManager::autoConnect(bool start, bool reset)
 {
-    if (reset)
+    // NOTE: start and reset are mutually exclusive
+    if (start) {
+        _currentState = State_t::START;
+    }
+    else if (reset) {
         _currentState = State_t::RESET;
+    }
 
     // iterate through state machine until we have configured WiFi
     while (_currentState != State_t::STOP)

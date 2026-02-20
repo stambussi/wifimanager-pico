@@ -24,7 +24,7 @@ public:
     WiFiManager(char const *apName, char const *apPassword, bool serialLog = false);
     ~WiFiManager();
 
-    bool autoConnect(bool reset=false);
+    bool autoConnect(bool start=false, bool reset=false);
     void setContentText(String& title, String& name, String& shortname, String& maker, String& version);
     void setContentMainImage(const char* img);
     static void clearCredentials();
